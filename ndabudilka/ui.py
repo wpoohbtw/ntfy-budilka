@@ -321,7 +321,9 @@ class BotUI:
             raise ValueError("Это действие доступно только администратору.")
         if kind == "token" and not json.loads(self.db.user(uid)["destination"]):
             raise ValueError("Сначала укажите тему или ссылку ntfy.")
-        await self.render(uid, "<b>Ожидаю ввод</b>\n\n" + escape(PROMPTS[kind]), [[("Отмена", "home")]])
+        await self.render(uid, "<b>Ожидаю ввод</b>\n\n"
+                          "Введите ответ отдельным сообщением. Подробная инструкция отправлена ниже.",
+                          [[("Отмена", "home")]])
         prompt = await self.bot.send_message(uid, PROMPTS[kind])
         self.db.update_user(uid, pending=kind, prompt_message_id=prompt.message_id)
 

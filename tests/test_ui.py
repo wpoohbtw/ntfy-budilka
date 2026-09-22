@@ -101,6 +101,15 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
         self.bot.delete_message.assert_any_await(1, prompt)
         self.assertIsNone(self.db.user(1)["pending"])
 
+    async def test_input_instruction_is_only_in_temporary_message(self):
+        await self.ui.start(self.message())
+        await self.ui.callback(self.query("input:words_add"))
+        main_text = self.bot.edit_message_text.call_args.args[0]
+        temporary_text = self.bot.send_message.call_args.args[1]
+        self.assertIn("Ожидаю ввод", main_text)
+        self.assertNotIn("Пришлите слова или фразы", main_text)
+        self.assertIn("Пришлите слова или фразы", temporary_text)
+
     async def test_old_menu_cannot_change_settings(self):
         await self.ui.start(self.message())
         old = self.db.user(1)["main_message_id"]
