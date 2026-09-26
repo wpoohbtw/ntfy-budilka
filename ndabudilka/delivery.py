@@ -5,16 +5,17 @@ import logging
 import time
 
 from .notifications import DeliveryError, Notification, NotificationSender
-from .rules import priority_for
+from .rules import night_active, priority_for
 from .storage import Database
 
 log = logging.getLogger(__name__)
 
 
 class DeliveryWorker:
-    def __init__(self, db: Database, sender: NotificationSender):
+    def __init__(self, db: Database, sender: NotificationSender, telegram_alerts=None):
         self.db = db
         self.sender = sender
+        self.telegram_alerts = telegram_alerts
         self.wakeup = asyncio.Event()
 
     async def deliver(self, item, now: datetime | None = None):
@@ -51,6 +52,12 @@ class DeliveryWorker:
             self.db.update_user(user["id"], last_error="")
             log.info("Уведомление доставлено: id=%s источник=%r получатель=%s приоритет=%s",
                      item["id"], item["title"], user["id"], notification.priority)
+            if self.telegram_alerts:
+                try:
+                    await self.telegram_alerts.notify(user["id"], item["title"], night_active(user, now))
+                except Exception as error:
+                    log.warning("Telegram-уведомление не отправлено: получатель=%s источник=%r; %s",
+                                user["id"], item["title"], type(error).__name__)
 
     async def run(self):
         while True:

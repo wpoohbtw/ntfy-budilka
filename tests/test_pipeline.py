@@ -24,7 +24,8 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         for uid in (1, 2):
             self.db.update_user(uid, destination=json.dumps({"server": "https://ntfy.sh", "topic": f"test-{uid}"}))
         self.sender = SimpleNamespace(send=AsyncMock())
-        self.worker = DeliveryWorker(self.db, self.sender)
+        self.telegram_alerts = SimpleNamespace(notify=AsyncMock())
+        self.worker = DeliveryWorker(self.db, self.sender, self.telegram_alerts)
         self.client = Mock()
         self.watcher = Watcher(self.client, self.db, self.worker)
         self.db.add_source(CHAT, 42, "Signals", True)
@@ -106,6 +107,12 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(destination["topic"], "test-1")
         self.assertEqual(self.db.counts(1), {"sent": 1})
         self.assertEqual(self.db.connection.execute("SELECT body FROM deliveries WHERE id=?", (item["id"],)).fetchone()[0], "")
+        self.telegram_alerts.notify.assert_awaited_once_with(1, "Signals", True)
+
+    async def test_daytime_delivery_starts_repeating_bot_alert(self):
+        self.watcher.process_message(CHAT, self.message())
+        await self.worker.deliver(self.db.due()[0], datetime(2026, 9, 21, 12, tzinfo=timezone.utc))
+        self.telegram_alerts.notify.assert_awaited_once_with(1, "Signals", False)
 
     async def test_signal_and_delivery_logs_include_source_but_not_post_text(self):
         with self.assertLogs("ndabudilka.watcher", level="INFO") as watcher_logs:

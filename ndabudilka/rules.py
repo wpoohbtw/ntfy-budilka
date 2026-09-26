@@ -49,14 +49,17 @@ def format_time(minutes: int) -> str:
     return f"{minutes // 60:02}:{minutes % 60:02}"
 
 
-def priority_for(user, now: datetime | None = None) -> int:
+def night_active(user, now: datetime | None = None) -> bool:
     if not user["night_enabled"]:
-        return 5
+        return False
     local = (now or datetime.now(timezone.utc)).astimezone(MOSCOW)
     minute = local.hour * 60 + local.minute
     start, end = user["night_start"], user["night_end"]
-    active = start <= minute < end if start < end else minute >= start or minute < end
-    return user["night_priority"] if active else 5
+    return start <= minute < end if start < end else minute >= start or minute < end
+
+
+def priority_for(user, now: datetime | None = None) -> int:
+    return user["night_priority"] if night_active(user, now) else 5
 
 
 def message_topic(message, is_forum: bool) -> int:

@@ -66,8 +66,10 @@ class SerialPerUser(BaseMiddleware):
 
 
 class BotUI:
-    def __init__(self, bot: Bot, db: Database, watcher: Watcher, sender: NtfySender, config: Config):
+    def __init__(self, bot: Bot, db: Database, watcher: Watcher, sender: NtfySender, config: Config,
+                 telegram_alerts=None):
         self.bot, self.db, self.watcher, self.sender, self.config = bot, db, watcher, sender, config
+        self.telegram_alerts = telegram_alerts
         self.catalog = SourceCatalog(watcher.client)
         self.router = Router()
         self.router.message.filter(F.chat.type == "private")
@@ -462,11 +464,18 @@ class BotUI:
 
     async def callback(self, query: CallbackQuery):
         uid = query.from_user.id
+        action, _, arg = (query.data or "").partition(":")
+        if action == "hide_alert":
+            await query.answer()
+            if self.telegram_alerts:
+                await self.telegram_alerts.hide(uid, query.message.message_id, arg)
+            else:
+                await self.delete(uid, query.message.message_id)
+            return
         user = self.db.user(uid)
         if not user or query.message.message_id != user["main_message_id"]:
             await query.answer("Это старое меню. Используйте актуальное или отправьте /start.", show_alert=True)
             return
-        action, _, arg = (query.data or "").partition(":")
         if not user["granted"] and action != "home":
             await query.answer("Доступ закрыт.", show_alert=True)
             return

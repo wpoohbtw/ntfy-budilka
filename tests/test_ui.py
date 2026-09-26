@@ -29,8 +29,9 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
                                    edit_message_text=AsyncMock(), edit_message_reply_markup=AsyncMock(),
                                    delete_message=AsyncMock(), id=123)
         self.sender = SimpleNamespace(send=AsyncMock())
+        self.telegram_alerts = SimpleNamespace(hide=AsyncMock())
         self.watcher = SimpleNamespace(client=Mock(), last_error="", validate_source=AsyncMock())
-        self.ui = BotUI(self.bot, self.db, self.watcher, self.sender, self.config)
+        self.ui = BotUI(self.bot, self.db, self.watcher, self.sender, self.config, self.telegram_alerts)
 
     async def asyncTearDown(self):
         self.db.close()
@@ -58,6 +59,12 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.db.user(1)["night_enabled"], 1)
         self.assertEqual(self.bot.send_message.await_count, 1)
         self.assertIn("✅", self.bot.edit_message_text.call_args.args[0])
+
+    async def test_hide_alert_works_outside_main_message(self):
+        query = self.query("hide_alert:abc", mid=999)
+        await self.ui.callback(query)
+        query.answer.assert_awaited_once()
+        self.telegram_alerts.hide.assert_awaited_once_with(1, 999, "abc")
 
     async def test_input_cleanup_and_confirmation_before_save(self):
         await self.ui.start(self.message())

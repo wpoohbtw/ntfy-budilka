@@ -16,6 +16,7 @@ from .config import Config, ROOT
 from .delivery import DeliveryWorker
 from .notifications.ntfy import NtfySender
 from .storage import Database
+from .telegram_alerts import TelegramAlertRepeater
 from .ui import BotUI
 from .watcher import Watcher
 
@@ -110,6 +111,7 @@ async def run(config: Config):
     db = Database(config.database_path, config.admin_id)
     bot = Bot(config.bot_token)
     sender = NtfySender(config.allow_private_hosts, config.allow_http)
+    telegram_alerts = TelegramAlertRepeater(bot)
     tasks = []
     try:
         await asyncio.wait_for(client.connect(), timeout=30)
@@ -117,13 +119,13 @@ async def run(config: Config):
         me = await client.get_me()
         if me.bot:
             raise ValueError("Нужна сессия пользовательского аккаунта Telethon, не бота.")
-        worker = DeliveryWorker(db, sender)
+        worker = DeliveryWorker(db, sender, telegram_alerts)
         watcher = Watcher(client, db, worker)
         webhook = await bot.get_webhook_info()
         if webhook.url:
             raise ValueError("У бота настроен webhook. Отключите его перед запуском локального polling.")
         dispatcher = Dispatcher()
-        dispatcher.include_router(BotUI(bot, db, watcher, sender, config).router)
+        dispatcher.include_router(BotUI(bot, db, watcher, sender, config, telegram_alerts).router)
 
         async def disconnected():
             await client.disconnected
@@ -142,6 +144,7 @@ async def run(config: Config):
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await client.disconnect()
+        await telegram_alerts.close()
         await sender.close()
         await bot.session.close()
         db.close()
