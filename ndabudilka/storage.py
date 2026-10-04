@@ -41,6 +41,7 @@ class Database:
                 topic_id INTEGER NOT NULL DEFAULT 0,
                 title TEXT NOT NULL,
                 forum INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
                 trigger_mode TEXT NOT NULL DEFAULT 'keywords' CHECK(trigger_mode IN ('keywords','all')),
                 UNIQUE(chat_id, topic_id)
             );
@@ -65,6 +66,9 @@ class Database:
         if "trigger_mode" not in source_columns:
             self.execute("ALTER TABLE sources ADD COLUMN trigger_mode TEXT NOT NULL DEFAULT 'keywords' "
                          "CHECK(trigger_mode IN ('keywords','all'))")
+        if "enabled" not in source_columns:
+            self.execute("ALTER TABLE sources ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 "
+                         "CHECK(enabled IN (0,1))")
         self.execute("INSERT OR IGNORE INTO settings VALUES ('words', ?)", (json.dumps(DEFAULT_WORDS),))
         self.ensure_user(admin_id)
         self.update_user(admin_id, granted=1)
@@ -141,6 +145,11 @@ class Database:
     def source(self, source_id: int):
         return self.connection.execute("SELECT * FROM sources WHERE id=?", (source_id,)).fetchone()
 
+    def active_sources(self, chat_id: int):
+        return self.connection.execute(
+            "SELECT * FROM sources WHERE chat_id=? AND enabled=1 ORDER BY topic_id DESC", (chat_id,)
+        ).fetchall()
+
     def add_source(self, chat_id: int, topic_id: int, title: str, forum: bool,
                    trigger_mode: str = "keywords"):
         if trigger_mode not in {"keywords", "all"}:
@@ -156,11 +165,16 @@ class Database:
         if cursor.rowcount != 1:
             raise ValueError("Источник уже удалён.")
 
+    def set_source_enabled(self, source_id: int, enabled: bool):
+        cursor = self.execute("UPDATE sources SET enabled=? WHERE id=?", (int(enabled), source_id))
+        if cursor.rowcount != 1:
+            raise ValueError("Источник уже удалён.")
+
     def remove_source(self, source_id: int):
         self.execute("DELETE FROM sources WHERE id=?", (source_id,))
 
     def has_source(self, chat_id: int, topic_id: int) -> bool:
-        return any(row["topic_id"] in (0, topic_id) for row in self.sources(chat_id))
+        return any(row["topic_id"] in (0, topic_id) for row in self.active_sources(chat_id))
 
     def enqueue(self, user_id: int, chat_id: int, message_id: int, topic_id: int,
                 title: str, body: str, link: str) -> bool:

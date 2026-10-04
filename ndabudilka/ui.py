@@ -197,11 +197,12 @@ class BotUI:
         text = "<b>Общие источники</b>\n\n"
         rows = []
         for source in visible:
-            text += (f"{escape(source['title'])}\n<code>{source['chat_id']}</code> · "
+            status = "🟢" if source["enabled"] else "🔴"
+            text += (f"{status} {escape(source['title'])}\n<code>{source['chat_id']}</code> · "
                      f"ветка: {source['topic_id'] or 'все'} · "
                      f"{'все сообщения' if source['trigger_mode'] == 'all' else 'кодовые слова'}\n\n")
             if self.is_admin(uid):
-                rows.append([(f"⚙️ {source['title'][:40]}", f"source_settings:{source['id']}")])
+                rows.append([(f"{status} ⚙️ {source['title'][:37]}", f"source_settings:{source['id']}")])
         if not sources:
             text += "Источников пока нет. Администратор может добавить канал или ветку по ID.\n"
         nav = []
@@ -222,16 +223,20 @@ class BotUI:
         if not source:
             raise ValueError("Источник уже удалён.")
         mode = source["trigger_mode"]
+        enabled = bool(source["enabled"])
         text = ("<b>Настройки источника</b>\n\n"
                 f"{escape(source['title'])}\n"
                 f"ID: <code>{source['chat_id']}</code>\n"
-                f"Ветка: {source['topic_id'] or 'все'}\n\n"
+                f"Ветка: {source['topic_id'] or 'все'}\n"
+                f"Статус: {'🟢 включён' if enabled else '🔴 отключён'}\n\n"
                 "Какие сообщения создают уведомление:\n"
                 f"{'✅' if mode == 'keywords' else '❌'} По кодовым словам\n"
                 f"{'✅' if mode == 'all' else '❌'} Все новые сообщения")
         if notice:
             text += "\n\n" + escape(notice)
-        rows = [[(f"{'✅' if mode == 'keywords' else '❌'} Кодовые слова",
+        rows = [[(f"{'🟢' if enabled else '🔴'} {'Включён' if enabled else 'Отключён'}",
+                  f"source_toggle:{source_id}")],
+                [(f"{'✅' if mode == 'keywords' else '❌'} Кодовые слова",
                   f"source_mode:{source_id}:keywords")],
                 [(f"{'✅' if mode == 'all' else '❌'} Все сообщения",
                   f"source_mode:{source_id}:all")],
@@ -479,7 +484,7 @@ class BotUI:
         if not user["granted"] and action != "home":
             await query.answer("Доступ закрыт.", show_alert=True)
             return
-        admin_action = action in {"admin", "remove", "groups", "source_settings", "source_mode",
+        admin_action = action in {"admin", "remove", "groups", "source_settings", "source_mode", "source_toggle",
                                   *PICKER_ACTIONS} or (action == "input" and arg in ADMIN_INPUTS)
         if admin_action and not self.is_admin(uid):
             await query.answer("Доступно только администратору.", show_alert=True)
@@ -522,6 +527,18 @@ class BotUI:
                 log.info("Режим источника изменён: источник=%r режим=%s администратор=%s",
                          source["title"], mode, uid)
                 await self.source_settings(uid, int(source_id), "Режим сохранён.")
+            elif action == "source_toggle":
+                if not arg.isdecimal():
+                    raise ValueError("Некорректный источник.")
+                source = self.db.source(int(arg))
+                if not source:
+                    raise ValueError("Источник уже удалён.")
+                enabled = not bool(source["enabled"])
+                self.db.set_source_enabled(int(arg), enabled)
+                log.info("Статус источника изменён: источник=%r включён=%s администратор=%s",
+                         source["title"], enabled, uid)
+                await self.source_settings(uid, int(arg),
+                                           "Источник включён." if enabled else "Источник отключён.")
             elif action == "groups":
                 await self.show_groups(uid)
             elif action in PICKER_ACTIONS:

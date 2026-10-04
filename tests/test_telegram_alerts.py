@@ -38,6 +38,16 @@ class TelegramAlertRepeaterTests(unittest.IsolatedAsyncioTestCase):
         self.bot.delete_message.assert_not_awaited()
         await alerts.close()
 
+    async def test_initial_delay_does_not_block_caller_and_defers_first_alert(self):
+        alerts = TelegramAlertRepeater(self.bot, interval=60)
+        await alerts.notify(1, "Signals", night=True, initial_delay=0.02)
+        self.bot.send_message.assert_not_awaited()
+        await asyncio.sleep(0.01)
+        self.bot.send_message.assert_not_awaited()
+        await asyncio.sleep(0.03)
+        self.bot.send_message.assert_awaited_once()
+        await alerts.close()
+
     async def test_hide_deletes_current_alert_and_stops_repeats(self):
         alerts = TelegramAlertRepeater(self.bot, interval=60)
         await alerts.notify(1, "Signals", night=False)

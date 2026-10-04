@@ -33,19 +33,28 @@ class TelegramAlertRepeater:
             InlineKeyboardButton(text="Скрыть", callback_data=f"hide_alert:{token}")
         ]])
 
-    async def notify(self, user_id: int, title: str, night: bool):
+    async def notify(self, user_id: int, title: str, night: bool, initial_delay: float = 0):
         token = secrets.token_urlsafe(9)
         state = _AlertState(user_id, asyncio.Event())
         self._states[token] = state
+        if initial_delay > 0:
+            state.task = asyncio.create_task(
+                self._delayed_start(token, state, title, night, initial_delay),
+                name=f"telegram-alert-delay-{token}",
+            )
+            return
+        await self._start(token, state, title, night)
+
+    async def _start(self, token: str, state: _AlertState, title: str, night: bool):
         try:
             message = await self.bot.send_message(
-                user_id, f"{title} - новое сообщение", reply_markup=self._markup(token)
+                state.user_id, f"{title} - новое сообщение", reply_markup=self._markup(token)
             )
         except Exception:
             self._states.pop(token, None)
             raise
         if state.hidden.is_set():
-            await self._delete(user_id, message.message_id)
+            await self._delete(state.user_id, message.message_id)
             self._states.pop(token, None)
             return
         if night or self.daytime_total <= 1:
@@ -55,6 +64,23 @@ class TelegramAlertRepeater:
             self._repeat(token, state, title, message.message_id),
             name=f"telegram-alert-{token}",
         )
+
+    async def _delayed_start(self, token: str, state: _AlertState, title: str,
+                             night: bool, initial_delay: float):
+        current = asyncio.current_task()
+        try:
+            try:
+                await asyncio.wait_for(state.hidden.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
+            await self._start(token, state, title, night)
+        except Exception as error:
+            log.warning("Отложенное Telegram-уведомление не отправлено: получатель=%s; %s",
+                        state.user_id, type(error).__name__)
+        finally:
+            if self._states.get(token) is state and state.task is current:
+                self._states.pop(token, None)
 
     async def _repeat(self, token: str, state: _AlertState, title: str, message_id: int):
         try:

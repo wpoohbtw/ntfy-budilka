@@ -9,6 +9,7 @@ from .rules import night_active, priority_for
 from .storage import Database
 
 log = logging.getLogger(__name__)
+TELEGRAM_ALERT_DELAY = 5
 
 
 class DeliveryWorker:
@@ -54,7 +55,10 @@ class DeliveryWorker:
                      item["id"], item["title"], user["id"], notification.priority)
             if self.telegram_alerts:
                 try:
-                    await self.telegram_alerts.notify(user["id"], item["title"], night_active(user, now))
+                    await self.telegram_alerts.notify(
+                        user["id"], item["title"], night_active(user, now),
+                        initial_delay=TELEGRAM_ALERT_DELAY,
+                    )
                 except Exception as error:
                     log.warning("Telegram-уведомление не отправлено: получатель=%s источник=%r; %s",
                                 user["id"], item["title"], type(error).__name__)

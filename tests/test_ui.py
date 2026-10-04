@@ -129,7 +129,7 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
     async def test_admin_actions_denied_even_with_forged_callback(self):
         await self.ui.start(self.message(uid=2))
         for data in ("admin", "input:words_add", "input:words_remove", "input:source", "input:grant",
-                     "input:revoke", "remove:1", "source_settings:1", "source_mode:1:all"):
+                     "input:revoke", "remove:1", "source_settings:1", "source_mode:1:all", "source_toggle:1"):
             query = self.query(data, uid=2)
             await self.ui.callback(query)
             self.assertTrue(query.answer.call_args.kwargs["show_alert"])
@@ -301,7 +301,7 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
         await self.ui.callback(self.query("sources:0"))
         markup = self.bot.edit_message_text.call_args.kwargs["reply_markup"]
         buttons = [(b.text, b.callback_data) for row in markup.inline_keyboard for b in row]
-        self.assertIn(("⚙️ Signals", "source_settings:1"), buttons)
+        self.assertIn(("🟢 ⚙️ Signals", "source_settings:1"), buttons)
         self.assertFalse(any(text.startswith("Удалить:") for text, _ in buttons))
 
         await self.ui.callback(self.query("source_settings:1"))
@@ -311,6 +311,13 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("✅ Все новые сообщения", self.bot.edit_message_text.call_args.args[0])
         settings_buttons = [b.callback_data for row in self.bot.edit_message_text.call_args.kwargs["reply_markup"].inline_keyboard for b in row]
         self.assertIn("remove:1", settings_buttons)
+
+        await self.ui.callback(self.query("source_toggle:1"))
+        self.assertEqual(self.db.source(1)["enabled"], 0)
+        self.assertIn("🔴 отключён", self.bot.edit_message_text.call_args.args[0])
+        await self.ui.callback(self.query("sources:0"))
+        buttons = [(b.text, b.callback_data) for row in self.bot.edit_message_text.call_args.kwargs["reply_markup"].inline_keyboard for b in row]
+        self.assertIn(("🔴 ⚙️ Signals", "source_settings:1"), buttons)
 
         await self.ui.callback(self.query("remove:1"))
         draft = json.loads(self.db.user(1)["draft"])
@@ -329,6 +336,10 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
         await self.ui.callback(query)
         self.assertEqual(self.db.source(1)["trigger_mode"], "keywords")
         self.assertTrue(query.answer.call_args.kwargs["show_alert"])
+        toggle_query = self.query("source_toggle:1", uid=2)
+        await self.ui.callback(toggle_query)
+        self.assertEqual(self.db.source(1)["enabled"], 1)
+        self.assertTrue(toggle_query.answer.call_args.kwargs["show_alert"])
 
     async def test_group_then_topic_then_confirmation(self):
         self.mock_catalog()
@@ -433,7 +444,7 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_source_actions_are_admin_only(self):
         self.mock_catalog()
         await self.ui.start(self.message(uid=2))
-        for data in ("groups", "input:channel", "input:group", "source_settings:1", "source_mode:1:all",
+        for data in ("groups", "input:channel", "input:group", "source_settings:1", "source_mode:1:all", "source_toggle:1",
                      "gselect:fake:0", "tselect:fake:0", "gpage:fake:1", "tpage:fake:1"):
             query = self.query(data, uid=2)
             await self.ui.callback(query)

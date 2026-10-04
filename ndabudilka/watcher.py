@@ -63,7 +63,7 @@ class Watcher:
             log.error("Watcher processing failed: %s", type(error).__name__)
 
     def process_message(self, chat_id: int, message) -> int:
-        sources = self.db.sources(chat_id)
+        sources = self.db.active_sources(chat_id)
         if not sources or getattr(message, "action", None):
             return 0
         if message.date and message.date < self.started_at:

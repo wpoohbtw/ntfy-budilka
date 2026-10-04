@@ -107,12 +107,22 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(destination["topic"], "test-1")
         self.assertEqual(self.db.counts(1), {"sent": 1})
         self.assertEqual(self.db.connection.execute("SELECT body FROM deliveries WHERE id=?", (item["id"],)).fetchone()[0], "")
-        self.telegram_alerts.notify.assert_awaited_once_with(1, "Signals", True)
+        self.telegram_alerts.notify.assert_awaited_once_with(1, "Signals", True, initial_delay=5)
 
     async def test_daytime_delivery_starts_repeating_bot_alert(self):
         self.watcher.process_message(CHAT, self.message())
         await self.worker.deliver(self.db.due()[0], datetime(2026, 9, 21, 12, tzinfo=timezone.utc))
-        self.telegram_alerts.notify.assert_awaited_once_with(1, "Signals", False)
+        self.telegram_alerts.notify.assert_awaited_once_with(1, "Signals", False, initial_delay=5)
+
+    async def test_disabled_source_is_not_parsed_and_cancels_pending_delivery(self):
+        self.watcher.process_message(CHAT, self.message())
+        item = self.db.due()[0]
+        source_id = self.db.sources()[0]["id"]
+        self.db.set_source_enabled(source_id, False)
+        self.assertEqual(self.watcher.process_message(CHAT, self.message(mid=11)), 0)
+        await self.worker.deliver(item)
+        self.sender.send.assert_not_awaited()
+        self.assertEqual(self.db.counts(1), {"cancelled": 1})
 
     async def test_signal_and_delivery_logs_include_source_but_not_post_text(self):
         with self.assertLogs("ndabudilka.watcher", level="INFO") as watcher_logs:
@@ -219,9 +229,12 @@ class PersistenceTests(unittest.TestCase):
             db = Database(path, 1)
             try:
                 self.assertEqual(db.sources()[0]["trigger_mode"], "keywords")
+                self.assertEqual(db.sources()[0]["enabled"], 1)
                 db.set_source_mode(1, "all")
+                db.set_source_enabled(1, False)
                 db.add_source(CHAT, 42, "Renamed", True)
                 self.assertEqual(db.source(1)["trigger_mode"], "all")
+                self.assertEqual(db.source(1)["enabled"], 0)
             finally:
                 db.close()
 
